@@ -9,6 +9,7 @@ app.use(helmet());
 
 
 
+//products endpoint
 app.use('/api/v1/products', productsRoutes);
 
 app.listen(port, ()=>{

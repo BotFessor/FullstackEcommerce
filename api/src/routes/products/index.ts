@@ -1,18 +1,15 @@
 import {Router} from 'express';
+import { createProductCtrl, deleteProductCtrl, getProductByIdCtrl, listProductsCtrl, updateProductCtrl } from './productsController';
 
 const router = Router();
 //products endpoints
-///api/v1/products
-router.get('/', (req, res) => {
-    res.send("List of products")
-});
-
-router.get('/:id', (req, res) => {
-    res.send(`Product with ID: ${req.params.id}`)
-});
-
-router.post('/', (req, res) => {
-    res.send("Authorized to Create new products");
-});
+// "/api/v1/products"
+//suffix with .....Ctrl == Controller
+//Suffix with .....Midlw == Middleware
+router.get('/', listProductsCtrl);
+router.get('/:id', getProductByIdCtrl);
+router.post('/', createProductCtrl);
+router.patch('/:id', updateProductCtrl);
+router.delete('/:id', deleteProductCtrl);
 
 export default router;
