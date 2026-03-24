@@ -8,6 +8,13 @@
       "when": 1774322911712,
       "tag": "0000_superb_tusk",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774324890214,
+      "tag": "0001_regular_proudstar",
+      "breakpoints": true
     }
   ]
 }

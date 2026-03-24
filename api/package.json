@@ -8,7 +8,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "node --import=tsx --watch --env-file=.env src/server.ts",
+    "dev": "tsx watch --env-file=.env -r tsconfig-paths/register src/server.ts",
     "build": "tsc",
     "db-migrate": "npx drizzle-kit migrate",
     "db-generate": "npx drizzle-kit generate",
@@ -19,7 +19,9 @@
     "crypto": "^1.0.1",
     "drizzle-orm": "^0.45.1",
     "express": "^5.2.1",
-    "helmet": "^8.1.0"
+    "helmet": "^8.1.0",
+    "tsconfig-paths": "^4.2.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",

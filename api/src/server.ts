@@ -1,5 +1,5 @@
 import express from "express";
-import productsRoutes from "./routes/products/index"
+import productsRoutes from "@/routes/products/index"
 import helmet from "helmet";
 //create app
 const app = express();
