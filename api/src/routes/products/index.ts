@@ -6,10 +6,10 @@ const router = Router();
 // "/api/v1/products"
 //suffix with .....Ctrl == Controller
 //Suffix with .....Midlw == Middleware
-router.get('/', listProductsCtrl);
-router.get('/:id', getProductByIdCtrl);
-router.post('/', createProductCtrl);
-router.patch('/:id', updateProductCtrl);
-router.delete('/:id', deleteProductCtrl);
+router.get('/products', listProductsCtrl);
+router.get('/products/:id', getProductByIdCtrl);
+router.post('/products', createProductCtrl);
+router.patch('/products/:id', updateProductCtrl); //prefer patch instead of router.put()
+router.delete('/products/:id', deleteProductCtrl);
 
 export default router;

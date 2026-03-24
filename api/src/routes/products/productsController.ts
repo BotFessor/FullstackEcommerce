@@ -9,7 +9,12 @@ export const getProductByIdCtrl = (req: Request, res: Response) => {
 }
 //add products
 export const createProductCtrl = (req: Request, res: Response) => {
-    res.send("Authorized to Create new products");
+    //console.log(req.body);
+    res.status(201).json({
+        success: true,
+        message: "Product added successfully",
+        payload : req.body
+    })
 }
 export const updateProductCtrl = (req: Request, res: Response) => {
     res.send("Authorized to update  products");
