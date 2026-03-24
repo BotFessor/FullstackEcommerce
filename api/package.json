@@ -9,15 +9,22 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "node --import=tsx --watch --env-file=.env src/server.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "db-migrate": "npx drizzle-kit migrate",
+    "db-generate": "npx drizzle-kit generate",
+    "db-studio": "npx drizzle-kit studio"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
     "crypto": "^1.0.1",
+    "drizzle-orm": "^0.45.1",
     "express": "^5.2.1",
     "helmet": "^8.1.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
+    "@types/pg": "^8.20.0",
+    "drizzle-kit": "^0.31.10",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
