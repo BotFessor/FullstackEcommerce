@@ -1,22 +1,35 @@
 import { Request, Response } from "express";
 import { productsTable } from "@/db/schema";
-import { success, z } from "zod";
 import { db } from "@/db";
-import { asc, eq, gt, gte, lt, lte, sql, sum } from "drizzle-orm";
+import {  eq, lt, sql } from "drizzle-orm";
+import { CreateProductRequest, DeleteProductByIdRequest, GetProductByIdRequest, GetProductRequest, returnedProductsFieldsGET, UpdateProductRequest } from "@/utils/zodSchemas/products.schema";
+
+//IMPORT TYPED VALUES
+
+//create a type
+type ValidatedRequest<T> = Request & {
+    validated: T;
+};
 
 
 //List all products
-export const listProductsCtrl = async (req: Request, res: Response) => {
+export const listProductsController = async (req: Request, res: Response) => {
     //authenticate and authorize the user
+    //=======================================
+    //a. Destructure everything in one go NB: params and body are defaults here i.e body: z.object({}).default({})
+    const { validated: { query} } = req as ValidatedRequest<GetProductRequest>;
+    //b. Now access Query parameters
+    const { page , limit, sort, search} = query;
+    //===========================================
     try {
         //const products = await db.select().from(productsTable).orderBy(asc(productsTable.price)).limit(4);
         /**const products = await db.query.productsTable.findMany({
             where:(lte(productsTable.price, 400))
         }); */
-        //compute sum
-        const products = await db.select({
+        //query DB
+        const products = await db.select(/*{
             total : sql<number>`sum(${productsTable.price})`
-        }).from(productsTable).where(lt(productsTable.price, 500));
+        }*/ returnedProductsFieldsGET).from(productsTable).where(lt(productsTable.price, 800));
         
         return res.status(200).json({
         success: true,
@@ -25,19 +38,28 @@ export const listProductsCtrl = async (req: Request, res: Response) => {
        });
 
     } catch (error: any) {
+        //1. Log Error via Pino
+
+        //2. send generic response
         return res.status(500).json({
             success: false,
-            message: "Couldn't fetch products"
-        });
+            message: "An internal server error has occured"  //Never send the error.message to clients use it for logging via Pino
+        })
     }
 }
 //Get products by ID
-export const getProductByIdCtrl = async (req: Request, res: Response) => {
+export const getProductByIdController = async (req: Request, res: Response) => {
     //Authenticate user and do Authorization
-    //Perform zod validation
+
+    //=======================================
+    //a. Destructure everything in one go NB: body and query are defaults here i.e body: z.object({}).default({})
+    const { validated: { params } } = req as ValidatedRequest<GetProductByIdRequest>;
+    //b. Now access Query parameters
+    const { id } = params;
+    //===========================================
 
         try {
-            const product = await db.select().from(productsTable).where(eq(productsTable.id, req.params.id));
+            const product = await db.select(returnedProductsFieldsGET).from(productsTable).where(eq(productsTable.id, id));
             if(product === undefined || product.length == 0){
                 return res.status(404).json({
                     success: false,
@@ -47,56 +69,36 @@ export const getProductByIdCtrl = async (req: Request, res: Response) => {
 
             return res.status(200).json({
              success: true,
-             message: "retrieved product with id",
+             message: "product retrieved successfully",
              data: product  
             })
         } catch (error:any) {
-        return res.status(500).json({
-            success: false,
-            message: error.message
-        }) 
+            //1. Log Error via Pino
+
+            //2. send generic response
+            return res.status(500).json({
+                success: false,
+                message: "An internal server error has occured"  //Never send the error.message to clients use it for logging via Pino
+            })
         }
 }
-//add products
-export const createProductCtrl = async (req: Request, res: Response) => {
-        //never trust user input..do validation
-        const zodProductSchema = z.object({
-            name : z.string().max(255, 'Name cannot exceed 255 characters').min(5, "Name should be at least 5 characters long"),
-            description: z.string().optional(),
-            image_url: z.string().url().optional(),
-            price: z.number("enter a valid value for price").gte(0),
-            quantity: z.number().int().gte(0, "Quantity must be >= 0"),
-        });
-
-        //validate the req.body 
-        /**
-                // on success, returns
-                        {
-                            success: true,
-                            data: ...
-                        }
-                //on Error, returns
-                        {
-                            success: false,
-                            error: ZodError
-                        }
-
-         */
-        const results = zodProductSchema.safeParse(await req.body); //does not throw exceptions
-
-        //If validation fails & errors exist
-        if(!results.success){
-            const errors = results.error.flatten();
-            return res.status(400).json({
-                success : false,
-                message: "Validation failed",
-                errors: errors.fieldErrors
-            });
-        }
+//CREATE PRODUCTS
+export const createProductController = async (req: Request, res: Response) => {
+    //=======================================
+    //a. Destructure everything in one go NB: params and query are defaults here i.e query: z.object({}).default({})
+    const { validated: { body } } = req as ValidatedRequest<CreateProductRequest>;
+    //b. Now access Query parameters
+    const product = body;
+    //===========================================
 
         try {
-            //create product
-            const [insertedProduct] = await db.insert(productsTable).values(results.data).returning();
+            const [insertedProduct] = await db.insert(productsTable).values(product).returning({
+                name: productsTable.name,
+                description: productsTable.description,
+                image_url: productsTable.image,
+                price: productsTable.price,
+                quantity: productsTable.quantity
+            });
 
             return res.status(201).json({
                 success: true,
@@ -105,20 +107,37 @@ export const createProductCtrl = async (req: Request, res: Response) => {
             });
             
         } catch (error: any) {
+            //1. Log Error via Pino
+
+            //2. send generic response
             return res.status(500).json({
                 success: false,
-                message: "error.message"
-            });
+                message: "An internal server error has occured"  //Never send the error.message to clients use it for logging via Pino
+            })
         }
         
 }
-export const updateProductCtrl = async(req: Request, res: Response) => {
-    const id = Number(req.params.id);
-    const updatedFields = req.body;
-    console.log(updatedFields);
+
+export const updateProductController = async(req: Request, res: Response) => {
+    //=======================================
+    //a. Destructure everything in one go NB: params and query are defaults here i.e query: z.object({}).default({})
+    const { validated: { params, body } } = req as ValidatedRequest<UpdateProductRequest>;
+    //b. Now access Query parameters
+    const { id } = params;  //destructure
+    const updatedFields = body; //re-assign
+    //===========================================
+
     try {
-        const [updateProds] = await db.update(productsTable).set(updatedFields).where(eq(productsTable.id, id)).returning();
-        if (!updateProds) {
+        //only return defined fields.
+        const [updatedProduct] = await db.update(productsTable).set(updatedFields).where(eq(productsTable.id, id)).returning({
+            name: productsTable.name,
+            description: productsTable.description,
+            image_url: productsTable.image,
+            price: productsTable.price,
+            quantity: productsTable.quantity
+        });
+
+        if (!updatedProduct) {
             return res.status(404).json({
                 success: false,
                 message: "Product was not found"
@@ -127,24 +146,38 @@ export const updateProductCtrl = async(req: Request, res: Response) => {
         return res.status(201).json({
             success: true,
             message: "Product updated successfully",
-            data: updateProds
+            data: updatedProduct
         })
     } catch (error: any) {
+        //1. Log Error via Pino
+
+        //2. send generic response
         return res.status(500).json({
             success: false,
-            message: error.message
+            message: "An internal server error has occured"  //Never send the error.message to clients use it for logging via Pino
         })
     }
     
 }
 
-
-export const deleteProductCtrl = async (req: Request, res: Response) => {
-       const {id} = req.params;
+export const deleteProductController = async (req: Request, res: Response) => {
+    //=======================================
+    //a. Destructure everything in one go NB: params and query are defaults here i.e query: z.object({}).default({})
+    const { validated: { params, body } } = req as ValidatedRequest<DeleteProductByIdRequest>;
+    //b. Now access Query parameters
+    const { id } = params;  //destructure
+    //===========================================
+       
        try {
-           const [deleteProd] = await db.delete(productsTable).where(eq(productsTable.id, Number(id))).returning();
+           const [deletedProduct] = await db.delete(productsTable).where(eq(productsTable.id, id)).returning({
+               name: productsTable.name,
+               description: productsTable.description,
+               image_url: productsTable.image,
+               price: productsTable.price,
+               quantity: productsTable.quantity
+           });
 
-           if (!deleteProd) {
+           if (!deletedProduct) {
                return res.status(404).json({
                    success: false,
                    message: "Unable to delete product"
@@ -153,13 +186,16 @@ export const deleteProductCtrl = async (req: Request, res: Response) => {
            return res.status(201).json({
                success: true,
                message: "Product deleted successfully",
-               data: deleteProd
+               data: deletedProduct
            })
        } catch (error: any) {
-            return res.status(500).json({
-                success: false,
-                message: error.message
-            })
+           //1. Log Error via Pino
+
+           //2. send generic response
+           return res.status(500).json({
+               success: false,
+               message: "An internal server error has occured"  //Never send the error.message to clients use it for logging via Pino
+           })
        }
 }
 

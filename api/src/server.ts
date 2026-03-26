@@ -6,7 +6,12 @@ const app = express();
 //define port
 const port = 3000;
 app.use(helmet());
-app.use(express.urlencoded({extended: true}))
+
+app.use(express.urlencoded({ //Add a pre-validation guard for urlencoded ONLY (tight integration)
+    extended: true,
+    limit: "10kb",
+    parameterLimit: 1000,
+}))
 app.use(express.json()); 
 
 

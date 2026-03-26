@@ -18,8 +18,10 @@
     "@neondatabase/serverless": "^1.0.2",
     "crypto": "^1.0.1",
     "drizzle-orm": "^0.45.1",
+    "drizzle-zod": "^0.8.3",
     "express": "^5.2.1",
     "helmet": "^8.1.0",
+    "http-status-codes": "^2.3.0",
     "tsconfig-paths": "^4.2.0",
     "zod": "^4.3.6"
   },
