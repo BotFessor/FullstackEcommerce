@@ -22,5 +22,7 @@
             // ]
         }
     },
-    "include": ["src", "types", "src/types"] //Important here
+    "include": ["src", "types", "src/types"], //Important here
+    "types": ["node","jest"],
+    "typeRoots": ["./node_modules/@types"]
 }

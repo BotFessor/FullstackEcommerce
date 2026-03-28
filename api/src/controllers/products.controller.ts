@@ -4,13 +4,10 @@ import { db } from "@/db";
 import {  eq, lt, sql } from "drizzle-orm";
 import { CreateProductRequest, DeleteProductByIdRequest, GetProductByIdRequest, GetProductRequest, returnedProductsFieldsGET, UpdateProductRequest } from "@/utils/zodSchemas/products.schema";
 
-//IMPORT TYPED VALUES
-
 //create a type
 type ValidatedRequest<T> = Request & {
     validated: T;
 };
-
 
 //List all products
 export const listProductsController = async (req: Request, res: Response) => {
@@ -90,7 +87,6 @@ export const createProductController = async (req: Request, res: Response) => {
     //b. Now access Query parameters
     const product = body;
     //===========================================
-
         try {
             const [insertedProduct] = await db.insert(productsTable).values(product).returning({
                 name: productsTable.name,

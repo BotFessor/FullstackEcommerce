@@ -1,6 +1,10 @@
 import { productsTable } from '@/db/schema';
 import { z } from 'zod';
-//zod products schema
+
+/**
+ * NEVER FORGET .strict()  always
+ */
+
 /**
   CREATE PRODUCT SCHEMA
  */
@@ -13,18 +17,19 @@ export const createProductSchema = z.object({
     description: z.string("field cannot be empty").trim().min(5).max(255),
     image_url: z.string("field cannot be empty").pipe(z.url("a valid url starting with http:// is required")).optional(),
     price: z.preprocess((val) => {
-        if (val === "" || val === undefined) return undefined;
-        return Number(val);
-    }, z.number("field cannot be empty")
-        .refine((val) => Number(val), { message: "value must be an integer" })
-        .nonnegative("field cannot have negative values")
-        .gt(0, "value must be greater than 0")
+        if (typeof val === "string") {
+            if (!/^\d+(\.\d+)?$/.test(val)) return undefined;
+            return Number(val);
+        }
+        return val;
+    },
+        z.number().finite().gt(0)
     ),
     quantity: z.preprocess((val) => {
         if (typeof val === "string") return Number(val); //convert string to number
         return val; //otherwise just return the value
     }, z.number("field cannot be empty")
-        .refine((val) => Number.isInteger(val), { message: "value must be an integer" })
+        .refine((val) => !Number.isNaN(val), { message: "Invalid number"})
         .nonnegative("value cannot be negative")
         .gt(0, "value must be greater than 0")
     ),

@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { z, ZodError } from 'zod';
-import { StatusCodes } from 'http-status-codes';
-import { hasDangerousKeysDeep, safeClone } from '@/utils/antiPrototypePollution/fightPrototypePollution';
+import { hasDangerousKeysDeep, safeClone, safePlainObject } from '@/utils/antiPrototypePollution/ppGuard';
+import { logAttack } from '@/utils/pinoLogger'; //pino Logger
 
 //1. define type
 type RequestSchema = {
@@ -9,7 +9,6 @@ type RequestSchema = {
     params?: unknown;
     query?: unknown;
 };
-
 //2. Optional Guard settings default is application/json but we want to support forms & Webhooks & File Uploads
 type ValidationOptions = {
     allowFormData?: boolean; //working with forms
@@ -17,7 +16,7 @@ type ValidationOptions = {
     allowFileUpload?: boolean; // file uploads
 };
 
-export function validateRequest<T extends RequestSchema>(schema: z.ZodType<T>, options: ValidationOptions = {}): RequestHandler  {
+export function validateRequestMiddleware<T extends RequestSchema>(schema: z.ZodType<T>, options: ValidationOptions = {}): RequestHandler  {  //Higher order function
     return (req: Request, res: Response, next: NextFunction) => {
 
         //console.log("CONTENT-TYPE:", req.headers["content-type"]);
@@ -25,36 +24,39 @@ export function validateRequest<T extends RequestSchema>(schema: z.ZodType<T>, o
         try {
             //#####Global Guard to prevent Prototype Pollution
             // 1. Prototype Pollution Protection (Detection + Sanitization)
-            // A. Detect malicious input BEFORE doing anything
-            const sources = [req.body, req.params, req.query];
-
+            // Aa. Detect malicious input BEFORE doing anything
+            
+            //To handle req.query properly, apply through safePlainObject
+            const safeBody = safePlainObject(req.body);
+            const safeParams = safePlainObject(req.params);
+            const safeQuery = safePlainObject(req.query); // 🔥 important
+            const sources = [safeBody, safeParams, safeQuery];
             for (const src of sources) {
                 if (hasDangerousKeysDeep(src)) {
-                    return res.status(StatusCodes.BAD_REQUEST).json({
+                    //add pino logging here
+                    return res.status(400).json({
                         success: false,
                         message: "Rejected: invalid input",
                     });
                 }
             }
-            // B. Sanitize input SAFELY (without mutating original req)
+            // B. Sanitize input SAFELY using safeClone (without mutating original req)
             const safeInput = {
                 body: safeClone(req.body),
                 params: safeClone(req.params),
                 query: safeClone(req.query),
             };
-            //End weeding prototypes
-            //2. Start Schema Validation
-            const sanitizedData = schema.parse(safeInput);
-            //==End Schema Validation
-
-            //3. Take security Measures as regards header  Content-Types.
+            //2. Take security Measures as regards header  Content-Types.
             const contentType = req.headers["content-type"] || "";
-
-            const isJson = contentType.includes("application/json");       //most common + webhooks etc
-            const isForm = contentType.includes("application/x-www-form-urlencoded");   //user forms
-            const isText = contentType.includes("text/plain");         //some webhooks that need text/plain
-            const isUpload = contentType.includes("multipart/form-data");   //file uploads
-
+            //Attackers can send:
+            // application/json-malicious
+            // application / json; charset = evil
+            // so Use strict parsing:
+            const type = contentType.split(";")[0].trim().toLowerCase();
+            const isJson = type === "application/json"; //most common + webhooks etc
+            const isForm = type === "application/x-www-form-urlencoded";   //user forms
+            const isText = type === "text/plain";  //some webhooks that need text/plain
+            const isUpload = type === "multipart/form-data";   //file uploads
             // Add a pre-validation guard for urlencoded ONLY (tight integration). Intercept Prototype pollution attacks from user submitted forms.
             // Extra strict check for qs-style attacks
             if (isForm && typeof req.body === "object" && req.body !== null) {
@@ -63,19 +65,17 @@ export function validateRequest<T extends RequestSchema>(schema: z.ZodType<T>, o
                     "constructor",
                     "prototype"
                 ];
-
                 const rawKeys = Object.keys(req.body);
-
                 for (const key of rawKeys) {
                     if (suspiciousPatterns.some(p => key.includes(p))) {
-                        return res.status(StatusCodes.BAD_REQUEST).json({
+                        //add pino logging
+                        return res.status(400).json({
                             success: false,
                             message: "Suspicious form input detected",
                         });
                     }
                 }
             }
-            
             //Enforce to prevent sending empty body or {}
             const methodsRequiringBody = ["POST", "PATCH", "PUT"];
             if (methodsRequiringBody.includes(req.method)) {
@@ -84,15 +84,17 @@ export function validateRequest<T extends RequestSchema>(schema: z.ZodType<T>, o
                     (options.allowFormData && isForm) || //"application/x-www-form-urlencoded"->only if: true      
                     (options.allowText && isText) ||     //"text/plain" -> allowed only if set to: true
                     (options.allowFileUpload && isUpload); //"multipart/form-data" -> allowed only if set to: true
-
                 if (!allowed) {
-                    return res.status(StatusCodes.UNSUPPORTED_MEDIA_TYPE).json({
+                    //add pino logging
+                    return res.status(400).json({
                         success: false,
                         message: "Unsupported Content-Type",
                     });
                 }
             }
-            //Prevent empty body
+            //3. Parse data - zod checks if data matches schema definitions otherwise throw new Error() 
+            const sanitizedData = schema.parse(safeInput);
+            //4. Prevent empty body
             const isEmptyObject = (val: unknown): val is Record<string, unknown> =>
                 typeof val === "object" && val !== null && !Array.isArray(val);
             if (
@@ -101,7 +103,7 @@ export function validateRequest<T extends RequestSchema>(schema: z.ZodType<T>, o
                 isEmptyObject(sanitizedData.body) &&
                 Object.keys(sanitizedData.body).length === 0
             ) {
-                return res.status(StatusCodes.BAD_REQUEST).json({
+                return res.status(400).json({
                     success: false,
                     message: "Request body cannot be empty",
                 });
@@ -109,37 +111,31 @@ export function validateRequest<T extends RequestSchema>(schema: z.ZodType<T>, o
             // attach sanitizedData to request Object, for use in controllers
             req.validated = sanitizedData;
             
-
             //Call the next middleware
             return next();
 
         } catch (err) {
-            //return console.log(err);
             if (err instanceof ZodError) {   
-                   
-                    /**Dealing with multiple errors per field  */
+                /**Dealing with multiple errors per field  */
                 const errorMessages = err.issues.reduce((acc, issue) => {
                     const key = issue.path.length ? issue.path.join('.') : "_root";
-                    if (!acc[key]) {
-                        acc[key] = [];
-                    }
+                    if (!acc[key]) acc[key] = [];
                     if (issue.code === "unrecognized_keys") {
                         acc[key].push(`Extra fields not allowed: ${issue.keys.join(", ")}`);
                     } else {
                         acc[key].push(issue.message);
                     }
-
                     return acc;
                 }, {} as Record<string, string[]>);
                 /**Multiple errors End Here */
-
-                return res.status(StatusCodes.UNPROCESSABLE_ENTITY).json({
+                return res.status(422).json({
                     success: false,
                     message: 'Validation failed',
                     errors: errorMessages
                 });
             } else {
-                return res.status(StatusCodes.INTERNAL_SERVER_ERROR).json({ error: 'Internal Server Error' });
+                return res.status(500).json({ error: 'Internal Server Error' });
+                //Pino logging here
             }
         }
     };
