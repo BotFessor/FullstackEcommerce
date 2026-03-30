@@ -27,11 +27,11 @@ export function hasDangerousKeysDeep(obj: unknown): boolean {
     while (stack.length) {
         const { node: current, depth } = stack.pop()!;
         if (!current || typeof current !== "object") continue;
-        
+
         // ✅ Prevent infinite loops / repeated traversal
         if (visited.has(current)) continue;
         visited.add(current);
-        
+
         // ✅ Optional depth guard
         if (depth > MAX_DEPTH) return true; //Excessive depth
 
@@ -188,5 +188,60 @@ export function safePlainObject(input: any, seen = new WeakMap()): any {
     }
     return obj;
 }
+
+export function hasRawDangerousPatterns(input: unknown): boolean {
+    if (typeof input !== "string") return false;
+
+    const normalized = input
+        .normalize("NFKC")
+        .toLowerCase();
+
+    const patterns = [
+        "__proto__",
+        "constructor",
+        "prototype",
+    ];
+
+    return patterns.some(p => normalized.includes(p));
+}
+//“Empty object = suspicious in this context”
+export function hasSuspiciousEmptyStructures(input: unknown): boolean {
+    if (!input || typeof input !== "object") return false;
+
+    const stack = [input];
+
+    while (stack.length) {
+        const current = stack.pop();
+
+        if (!current || typeof current !== "object") continue;
+
+        // 🚨 suspicious empty object
+        if (
+            !Array.isArray(current) &&
+            Object.keys(current).length === 0
+        ) {
+            return true;
+        }
+
+        if (Array.isArray(current)) {
+            for (const item of current) {
+                if (item && typeof item === "object") {
+                    stack.push(item);
+                }
+            }
+        } else {
+            for (const key of Object.keys(current)) {
+                const val = (current as any)[key];
+                if (val && typeof val === "object") {
+                    stack.push(val);
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+
 
 

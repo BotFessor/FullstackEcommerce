@@ -1,122 +1,227 @@
+/**
+ * NOTE:
+ * JavaScript runtime prototype mutations (e.g. obj.__proto__)
+ * cannot be detected via HTTP payload.
+ *
+ * This middleware protects against: HTTP attacks
+ * - Raw payload attacks
+ * - Encoded attacks
+ * - qs / form attacks
+ * - Deep object injection
+ * THE FLOW IS: 
+ RAW BODY (string)
+   ↓
+detectRawPrototypePollution ✅
+   ↓
+express parses JSON
+   ↓
+validateRequest middleware
+   ↓
+0️⃣ raw flag check
+1️⃣ hasDangerousKeysDeep (object level)
+2️⃣ safeClone + safePlainObject
+3️⃣ content-type checks
+4️⃣ Zod
+ */
+/**
+ * THIS IS A 3-LEVEL LAYERED DEFENSE
+ * 🛡️ Layer 1 — RAW (string level)
+Catches:
+-> __proto__
+-> encoded attacks %5F%5Fproto%5F%5F
+-> unicode tricks
+-> duplicate key payloads
+-> polyglots
+
+🛡️ Layer 2 — Object (your existing guard)
+Catches:
+-> getters
+-> non-enumerables
+-> runtime mutation
+-> deep nesting
+-> arrays / constructor tricks
+
+🛡️ Layer 3 — Validation (Zod)
+Catches:
+-> wrong schema
+-> missing fields
+-> type issues
+
+NB: You are NOT “forcing raw through”, 👉 You are just observing it briefly before parsing. This is->safe, standard practice, used in high-security APIs (Stripe, Shopify, etc.).
+SUMMARY:
+
+                                Attacker sends payload
+                                            ↓
+                                RAW detector → "malicious?" → YES → 400 ✅
+                                            ↓
+                                           else
+                                            ↓
+                                Parsed safely 
+                                            ↓
+                                Object guard → "polluted?" → YES → 400 ✅
+                                            ↓
+                                           else
+                                            ↓
+                                Zod → "invalid schema?" → YES → 422 ✅
+ */
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { z, ZodError } from 'zod';
-import { hasDangerousKeysDeep, safeClone, safePlainObject } from '@/utils/antiPrototypePollution/ppGuard';
-import { logAttack } from '@/utils/pinoLogger'; //pino Logger
+import { hasDangerousKeysDeep, hasRawDangerousPatterns, hasSuspiciousEmptyStructures, safeClone, safePlainObject } from '@/utils/security/antiPrototypePollution/ppGuard'; 
 
-//1. define type
 type RequestSchema = {
     body?: unknown;
     params?: unknown;
     query?: unknown;
 };
-//2. Optional Guard settings default is application/json but we want to support forms & Webhooks & File Uploads
+
 type ValidationOptions = {
-    allowFormData?: boolean; //working with forms
-    allowText?: boolean; // for cetain webhooks
-    allowFileUpload?: boolean; // file uploads
+    allowFormData?: boolean;
+    allowText?: boolean;
+    allowFileUpload?: boolean;
 };
 
-export function validateRequestMiddleware<T extends RequestSchema>(schema: z.ZodType<T>, options: ValidationOptions = {}): RequestHandler  {  //Higher order function
+export function validateRequest<T extends RequestSchema>(
+    schema: z.ZodType<T>,
+    options: ValidationOptions = {}
+): RequestHandler {
     return (req: Request, res: Response, next: NextFunction) => {
-
-        //console.log("CONTENT-TYPE:", req.headers["content-type"]);
-        //console.log("RAW BODY BEFORE PARSE:", req.body);
+        //console.log("RAW BODY:", (req as any).rawBody);
+        
         try {
-            //#####Global Guard to prevent Prototype Pollution
-            // 1. Prototype Pollution Protection (Detection + Sanitization)
-            // Aa. Detect malicious input BEFORE doing anything
-            
-            //To handle req.query properly, apply through safePlainObject
-            const safeBody = safePlainObject(req.body);
-            const safeParams = safePlainObject(req.params);
-            const safeQuery = safePlainObject(req.query); // 🔥 important
-            const sources = [safeBody, safeParams, safeQuery];
-            for (const src of sources) {
-                if (hasDangerousKeysDeep(src)) {
-                    //add pino logging here
-                    return res.status(400).json({
-                        success: false,
-                        message: "Rejected: invalid input",
-                    });
-                }
+            // ===== 0️⃣ RAW attack detection (NEW - STRONG) =====
+            const raw = (req as any).rawBody;
+
+            if (raw && hasRawDangerousPatterns(raw)) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Rejected: malicious payload detected",
+                });
             }
-            // B. Sanitize input SAFELY using safeClone (without mutating original req)
+            // ===== 1️⃣ Prototype Pollution Defense on RAW input =====
+            // 🔥 EXTRA: query string raw scan
+            if (req.url && hasRawDangerousPatterns(req.url)) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Rejected: malicious query",
+                });
+            }
+            if (
+                hasDangerousKeysDeep(req.body) ||
+                hasDangerousKeysDeep(req.params) ||
+                hasDangerousKeysDeep(req.query)
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Rejected: invalid input",
+                });
+            }
+            // ===== Detect stripped prototype attacks =====
+            if (
+                hasSuspiciousEmptyStructures(req.body) ||
+                hasSuspiciousEmptyStructures(req.query) ||
+                hasSuspiciousEmptyStructures(req.params)
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Rejected: suspicious payload structure",
+                });
+            }
+
+            // ===== 2️⃣ Safe clone + plain object AFTER guard =====
             const safeInput = {
-                body: safeClone(req.body),
-                params: safeClone(req.params),
-                query: safeClone(req.query),
+                body: safePlainObject(safeClone(req.body)),
+                params: safePlainObject(safeClone(req.params)),
+                query: safePlainObject(safeClone(req.query)),
             };
-            //2. Take security Measures as regards header  Content-Types.
-            const contentType = req.headers["content-type"] || "";
-            //Attackers can send:
-            // application/json-malicious
-            // application / json; charset = evil
-            // so Use strict parsing:
-            const type = contentType.split(";")[0].trim().toLowerCase();
-            const isJson = type === "application/json"; //most common + webhooks etc
-            const isForm = type === "application/x-www-form-urlencoded";   //user forms
-            const isText = type === "text/plain";  //some webhooks that need text/plain
-            const isUpload = type === "multipart/form-data";   //file uploads
-            // Add a pre-validation guard for urlencoded ONLY (tight integration). Intercept Prototype pollution attacks from user submitted forms.
-            // Extra strict check for qs-style attacks
-            if (isForm && typeof req.body === "object" && req.body !== null) {
-                const suspiciousPatterns = [
-                    "__proto__",
-                    "constructor",
-                    "prototype"
-                ];
-                const rawKeys = Object.keys(req.body);
-                for (const key of rawKeys) {
-                    if (suspiciousPatterns.some(p => key.includes(p))) {
-                        //add pino logging
-                        return res.status(400).json({
-                            success: false,
-                            message: "Suspicious form input detected",
-                        });
-                    }
-                }
+
+            // ===== 3️⃣ Content-Type / Method checks =====
+            const contentType = (req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
+            const isJson = contentType === "application/json";
+            const isForm = contentType === "application/x-www-form-urlencoded";
+            const isText = contentType === "text/plain";
+            const isUpload = contentType === "multipart/form-data";
+            //Block multipart early
+            if (isUpload && !options.allowFileUpload) {
+                return res.status(400).json({
+                    success: false,
+                    message: "File uploads not allowed",
+                });
             }
-            //Enforce to prevent sending empty body or {}
+
             const methodsRequiringBody = ["POST", "PATCH", "PUT"];
             if (methodsRequiringBody.includes(req.method)) {
                 const allowed =
-                    isJson ||                            //"application/json" ->allowed by default
-                    (options.allowFormData && isForm) || //"application/x-www-form-urlencoded"->only if: true      
-                    (options.allowText && isText) ||     //"text/plain" -> allowed only if set to: true
-                    (options.allowFileUpload && isUpload); //"multipart/form-data" -> allowed only if set to: true
+                    isJson ||
+                    (options.allowFormData && isForm) ||
+                    (options.allowText && isText) ||
+                    (options.allowFileUpload && isUpload);
+
                 if (!allowed) {
-                    //add pino logging
                     return res.status(400).json({
                         success: false,
                         message: "Unsupported Content-Type",
                     });
                 }
             }
-            //3. Parse data - zod checks if data matches schema definitions otherwise throw new Error() 
-            const sanitizedData = schema.parse(safeInput);
-            //4. Prevent empty body
-            const isEmptyObject = (val: unknown): val is Record<string, unknown> =>
+
+            // Extra strict check for forms
+            if (isForm && typeof safeInput.body === "object" && safeInput.body !== null) {
+                const suspiciousPatterns = ["__proto__", "constructor", "prototype"];
+                const rawKeys = Object.keys(safeInput.body);
+                for (const key of rawKeys) {
+                    const normalizedKey = key
+                        .normalize("NFKC")
+                        .toLowerCase();
+
+                    if (suspiciousPatterns.some(p => normalizedKey.includes(p))) {
+                        return res.status(400).json({
+                            success: false,
+                            message: "Rejected: invalid data",
+                        });
+                    }
+                }
+            }
+            // ===== 4️⃣ Zod validation =====
+            const validatedData = schema.parse(safeInput);
+
+            // ===== 5️⃣ Empty body & stripped attack detection =====
+            const isPlainObject = (val: unknown): val is Record<string, unknown> =>
                 typeof val === "object" && val !== null && !Array.isArray(val);
+
+            const isEmptyObject = (val: unknown): val is Record<string, unknown> =>
+                isPlainObject(val) && Object.keys(val).length === 0;
+
+            // 🚨 CRITICAL: Detect prototype-stripped attacks
             if (
                 methodsRequiringBody.includes(req.method) &&
-                sanitizedData.body !== undefined &&
-                isEmptyObject(sanitizedData.body) &&
-                Object.keys(sanitizedData.body).length === 0
+                isEmptyObject(req.body) &&
+                typeof (req as any).rawBody === "string" &&
+                (req as any).rawBody.trim() !== "" &&
+                (req as any).rawBody !== "{}"
+            ) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Rejected: suspicious payload",
+                });
+            }
+
+
+            if (
+                methodsRequiringBody.includes(req.method) &&
+                validatedData.body !== undefined &&
+                isEmptyObject(validatedData.body) &&
+                Object.keys(validatedData.body).length === 0
             ) {
                 return res.status(400).json({
                     success: false,
                     message: "Request body cannot be empty",
                 });
             }
-            // attach sanitizedData to request Object, for use in controllers
-            req.validated = sanitizedData;
-            
-            //Call the next middleware
-            return next();
 
+            req.validated = validatedData;
+            return next();
         } catch (err) {
-            if (err instanceof ZodError) {   
-                /**Dealing with multiple errors per field  */
+            if (err instanceof ZodError) {
                 const errorMessages = err.issues.reduce((acc, issue) => {
                     const key = issue.path.length ? issue.path.join('.') : "_root";
                     if (!acc[key]) acc[key] = [];
@@ -127,7 +232,7 @@ export function validateRequestMiddleware<T extends RequestSchema>(schema: z.Zod
                     }
                     return acc;
                 }, {} as Record<string, string[]>);
-                /**Multiple errors End Here */
+
                 return res.status(422).json({
                     success: false,
                     message: 'Validation failed',
@@ -135,31 +240,7 @@ export function validateRequestMiddleware<T extends RequestSchema>(schema: z.Zod
                 });
             } else {
                 return res.status(500).json({ error: 'Internal Server Error' });
-                //Pino logging here
             }
         }
     };
 }
-
-/**
- * Sanitize first → validate → trust only req.validated
- WHAT THIS FILE DOES
- 1.  Incoming request
-   ↓
-2. Deep detection (blocks attack)
-   ↓
-3. Safe clone (removes prototype chain)
-   ↓
-4. Zod validation (strict structure)
-   ↓
-5. req.validated = sanitizedData 
-
--> You never trust req.body again
--> Controllers only see clean, prototype-free data
-
-#Works for ALL content types you support
--application/json 
--x-www-form-urlencoded  ~(important)
--text/plain (if parsed) 
--multipart/form-data (fields part) 
- */

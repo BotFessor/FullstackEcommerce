@@ -1,4 +1,5 @@
-import { prototypePollutionSuite } from "./test-cases";
+import { httpAttacksSuite } from "./http-attacks";
+
 
 /**
  * =======MOCK DB 
@@ -21,7 +22,7 @@ jest.mock("@/db", () => ({
 
 //TEST PRODUCTS ENDPOINT: /api/v1/products
 describe("Security: Products Endpoint", () => {
-    prototypePollutionSuite("/api/v1/products");
+    httpAttacksSuite("/api/v1/products");
 });
 
 //TEST USERS ENDPOINT: /api/v1/users

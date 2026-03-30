@@ -35,6 +35,7 @@
     "@types/istanbul-lib-report": "^3.0.3",
     "@types/istanbul-reports": "^3.0.4",
     "@types/jest": "^30.0.0",
+    "@types/node": "^25.5.0",
     "@types/pg": "^8.20.0",
     "drizzle-kit": "^0.31.10",
     "jest": "^30.3.0",

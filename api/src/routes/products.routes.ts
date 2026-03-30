@@ -1,18 +1,21 @@
 import {Router} from 'express';
-import { validateRequestMiddleware } from '@/middlewares/validate.middleware';
-import { createProductRequestSchema, deleteProductByIdRequestSchema, getProductByIdRequestSchema, getProductsRequestSchema, updateProductRequestSchema } from '@/utils/zodSchemas/products.schema';
-import { createProductController, deleteProductController, getProductByIdController, listProductsController, updateProductController } from '@/controllers/products.controller';
+import { schema } from '@/utils/zodSchemas/products.schema';
+import { productsController } from '@/controllers/products.controller';
+import { validateRequest } from '@/middlewares/validate.middleware';
 
-const router = Router();
-//products endpoints
-// "/api/v1/products"
-router.get('/products', validateRequestMiddleware(getProductsRequestSchema, {}), listProductsController); //list all products
-router.get('/products/:id',validateRequestMiddleware(getProductByIdRequestSchema, {}), getProductByIdController); //get product by Id
-router.post('/products', validateRequestMiddleware(createProductRequestSchema, {}), createProductController); //create product
-router.patch('/products/:id', validateRequestMiddleware(updateProductRequestSchema, {}), updateProductController); //update product
-router.delete('/products/:id', validateRequestMiddleware(deleteProductByIdRequestSchema, {}), deleteProductController); //delete product
 
-export default router;
+export const productsRouter = Router();
+// GET all products
+productsRouter.get('/', validateRequest(schema.getProducts, {}), productsController.getProducts); 
+// CREATE product 
+productsRouter.post('/', validateRequest(schema.createProduct, {}), productsController.createProduct); 
+// UPDATE product
+productsRouter.patch('/:id', validateRequest(schema.updateProduct, {}), productsController.updateProduct); 
+// GET product by id
+productsRouter.get('/:id', validateRequest(schema.getProductById, {}), productsController.getProductById);
+// DELETE product by id
+productsRouter.delete('/:id', validateRequest(schema.deleteProductById, {}), productsController.deleteProduct); 
+
 
 
 

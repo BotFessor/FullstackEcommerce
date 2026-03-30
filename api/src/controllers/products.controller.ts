@@ -1,16 +1,17 @@
 import { Request, Response } from "express";
 import { productsTable } from "@/db/schema";
 import { db } from "@/db";
-import {  eq, lt, sql } from "drizzle-orm";
-import { CreateProductRequest, DeleteProductByIdRequest, GetProductByIdRequest, GetProductRequest, returnedProductsFieldsGET, UpdateProductRequest } from "@/utils/zodSchemas/products.schema";
+import {  gt, eq, lt, sql } from "drizzle-orm";
+import { CreateProductRequest, DeleteProductByIdRequest, GetProductByIdRequest, GetProductRequest, dotReturning, UpdateProductRequest } from "@/utils/zodSchemas/products.schema";
 
 //create a type
 type ValidatedRequest<T> = Request & {
     validated: T;
 };
 
-//List all products
-export const listProductsController = async (req: Request, res: Response) => {
+export const productsController = {
+//get all products
+    async getProducts(req: Request, res: Response){
     //authenticate and authorize the user
     //=======================================
     //a. Destructure everything in one go NB: params and body are defaults here i.e body: z.object({}).default({})
@@ -26,7 +27,7 @@ export const listProductsController = async (req: Request, res: Response) => {
         //query DB
         const products = await db.select(/*{
             total : sql<number>`sum(${productsTable.price})`
-        }*/ returnedProductsFieldsGET).from(productsTable).where(lt(productsTable.price, 800));
+        }*/ dotReturning).from(productsTable).where(gt(productsTable.price, 800));
         
         return res.status(200).json({
         success: true,
@@ -43,9 +44,9 @@ export const listProductsController = async (req: Request, res: Response) => {
             message: "An internal server error has occured"  //Never send the error.message to clients use it for logging via Pino
         })
     }
-}
-//Get products by ID
-export const getProductByIdController = async (req: Request, res: Response) => {
+},
+//Get product by ID
+    async getProductById(req: Request, res: Response){
     //Authenticate user and do Authorization
 
     //=======================================
@@ -56,7 +57,7 @@ export const getProductByIdController = async (req: Request, res: Response) => {
     //===========================================
 
         try {
-            const product = await db.select(returnedProductsFieldsGET).from(productsTable).where(eq(productsTable.id, id));
+            const product = await db.select(dotReturning).from(productsTable).where(eq(productsTable.id, id));
             if(product === undefined || product.length == 0){
                 return res.status(404).json({
                     success: false,
@@ -78,9 +79,9 @@ export const getProductByIdController = async (req: Request, res: Response) => {
                 message: "An internal server error has occured"  //Never send the error.message to clients use it for logging via Pino
             })
         }
-}
-//CREATE PRODUCTS
-export const createProductController = async (req: Request, res: Response) => {
+},
+//Create product
+    async createProduct (req: Request, res: Response){
     //=======================================
     //a. Destructure everything in one go NB: params and query are defaults here i.e query: z.object({}).default({})
     const { validated: { body } } = req as ValidatedRequest<CreateProductRequest>;
@@ -88,13 +89,7 @@ export const createProductController = async (req: Request, res: Response) => {
     const product = body;
     //===========================================
         try {
-            const [insertedProduct] = await db.insert(productsTable).values(product).returning({
-                name: productsTable.name,
-                description: productsTable.description,
-                image_url: productsTable.image,
-                price: productsTable.price,
-                quantity: productsTable.quantity
-            });
+            const [insertedProduct] = await db.insert(productsTable).values(product).returning(dotReturning);
 
             return res.status(201).json({
                 success: true,
@@ -112,9 +107,9 @@ export const createProductController = async (req: Request, res: Response) => {
             })
         }
         
-}
+},
 
-export const updateProductController = async(req: Request, res: Response) => {
+    async updateProduct(req: Request, res: Response){
     //=======================================
     //a. Destructure everything in one go NB: params and query are defaults here i.e query: z.object({}).default({})
     const { validated: { params, body } } = req as ValidatedRequest<UpdateProductRequest>;
@@ -125,13 +120,7 @@ export const updateProductController = async(req: Request, res: Response) => {
 
     try {
         //only return defined fields.
-        const [updatedProduct] = await db.update(productsTable).set(updatedFields).where(eq(productsTable.id, id)).returning({
-            name: productsTable.name,
-            description: productsTable.description,
-            image_url: productsTable.image,
-            price: productsTable.price,
-            quantity: productsTable.quantity
-        });
+        const [updatedProduct] = await db.update(productsTable).set(updatedFields).where(eq(productsTable.id, id)).returning(dotReturning);
 
         if (!updatedProduct) {
             return res.status(404).json({
@@ -154,9 +143,9 @@ export const updateProductController = async(req: Request, res: Response) => {
         })
     }
     
-}
+},
 
-export const deleteProductController = async (req: Request, res: Response) => {
+    async deleteProduct(req: Request, res: Response){
     //=======================================
     //a. Destructure everything in one go NB: params and query are defaults here i.e query: z.object({}).default({})
     const { validated: { params, body } } = req as ValidatedRequest<DeleteProductByIdRequest>;
@@ -165,13 +154,7 @@ export const deleteProductController = async (req: Request, res: Response) => {
     //===========================================
        
        try {
-           const [deletedProduct] = await db.delete(productsTable).where(eq(productsTable.id, id)).returning({
-               name: productsTable.name,
-               description: productsTable.description,
-               image_url: productsTable.image,
-               price: productsTable.price,
-               quantity: productsTable.quantity
-           });
+           const [deletedProduct] = await db.delete(productsTable).where(eq(productsTable.id, id)).returning(dotReturning);
 
            if (!deletedProduct) {
                return res.status(404).json({
@@ -193,7 +176,7 @@ export const deleteProductController = async (req: Request, res: Response) => {
                message: "An internal server error has occured"  //Never send the error.message to clients use it for logging via Pino
            })
        }
+},
 }
-
 
 
