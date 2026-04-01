@@ -17,11 +17,14 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
     "crypto": "^1.0.1",
     "drizzle-orm": "^0.45.1",
     "drizzle-zod": "^0.8.3",
     "express": "^5.2.1",
     "helmet": "^8.1.0",
+    "hpp": "^0.2.3",
     "http-status-codes": "^2.3.0",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
@@ -30,7 +33,10 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/hpp": "^0.2.7",
     "@types/istanbul-lib-coverage": "^2.0.6",
     "@types/istanbul-lib-report": "^3.0.3",
     "@types/istanbul-reports": "^3.0.4",
